@@ -1,0 +1,308 @@
+---
+title: "COBP PVA info for Tyson"
+author: "Daniel Laughlin"
+date: "1/23/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# load data for flowering plant counts and merge with climate and streamflow data for analysis at segment level
+```{r}
+### set directory
+setwd("~/OneDrive - University of Wyoming/Data/COBP")
+
+### load data
+precip <- read.csv("precip.cheyenne.csv", skip=1, header=TRUE)
+temp <- read.csv("temp.cheyenne.csv", skip=1, header=TRUE)
+flow <- read.csv("crow.flow.csv", skip=1, header=TRUE)
+counts.segment <- read.csv("cobp.count.csv", header=TRUE)
+
+### merge datasets
+
+pr.te <- merge(precip[,c(1,14:16)], temp[,c(1,14:16)], by="year") # merge annual summaries for simplicity
+flow.pr.te <- merge(pr.te, flow[,c(1,14:16)], all.x=TRUE) # merge annual summaries for simplicity
+dat <- merge(counts.segment, flow.pr.te, by="year")
+```
+
+# stream flow vs water year
+```{r}
+### there is a poisson-distributed-looking relationship between precip and streamflow
+plot(flow.pr.te$flow.wateryear ~ flow.pr.te$precip.wateryear, pch=19)
+plot(log(flow.pr.te$flow.wateryear) ~ flow.pr.te$precip.wateryear, pch=19)
+m1 <- lm(log(flow.pr.te$flow.wateryear) ~ flow.pr.te$precip.wateryear)
+summary(m1)
+### so either precip is a mediocre substitute for streamflow, or flow will add additional info
+### however, we only have flow data from 1993 onward, which means we could potentially PREDICT
+### stream flow for previous years 1987-1992?
+### I think Bonnie said there was one year where there were releases from a dam,
+### so should check on that if we use it
+
+```
+
+# Ratio of flowering stems to rosettes in 2018
+```{r}
+### This ratio from 2018 and other years could be used as a prior to constrain estimates of rosette plants?
+r2f <- read.csv("cobp.rosette.ratio.csv", header=TRUE)
+hist(r2f$ratio)
+
+r2f <- r2f %>% 
+  mutate(total = rosettes + flowering,
+         prop = flowering / total)
+
+mod <- glm(cbind(flowering, total) ~ 1, family = binomial, data = r2f)
+summary(mod)
+
+# Around 20% flowering on average
+
+
+```
+
+# Measurement error for flowering stems in 2014
+```{r}
+### Not sure how we incorporate this into the analysis, but these replicate counts provide information
+### about the measurement error in counting flowering stems
+reps <- read.csv("count.replication.csv", header=TRUE)
+for(i in 1: nrow(reps)) reps$sd[i] <- sd(c(reps$first.count[i], reps$second.count[i]))
+plot(density(reps$sd))
+mean(reps$sd)
+sd(reps$sd)
+#plot(reps$first.count, reps$sd)
+
+```
+
+# Comparing lambda estimates using counts at the stream level
+```{r}
+###  lam.floyd are lambdas computed from Floyd's transition matrices (mean matrix of 3 plots per stream) for two transitions
+###  lam.flowering.obs are lambdas computed from counts of flowering stems
+lambdas <- data.frame(lam.floyd = c(1.23, 1.36, 2.04, 1.02, 1.67, 1.24),
+                      lam.flowering.obs = c(0.9378134, 2.1572193, 0.9005392, 0.9268130, 1.2820513, 0.8311828))
+rownames(lambdas) <- c("crow.92.93", "crow.93.94", "unnamed.92.93", "unnamed.93.94", "diamond.92.93", "diamond.93.94")
+
+### These estimates are not correlated!
+### This is either because counts of flowering stems is not an accurate assessment of population size
+### or the plots in Floyd's study are not accurate assessments of population growth rates
+plot(lambdas$lam.floyd, lambdas$lam.obs)
+
+### These are counts at the stream level to compute "Lambda"
+counts.stream <- read.csv("counts.stream.csv", header=TRUE)
+counts.stream$crow.lam <- NA
+counts.stream$diam.lam <- NA
+counts.stream$un.lam <- NA
+
+### This calculation of lambda only accounts for flowering plants!
+### Need to account for rosettes to be useful
+
+for(i in 1: nrow(counts.stream)){
+  counts.stream$crow.lam[i] <- counts.stream$crow.total[i+1] / counts.stream$crow.total[i]
+  counts.stream$diam.lam[i] <- counts.stream$diamond.total[i+1] / counts.stream$diamond.total[i]
+  counts.stream$un.lam[i] <- counts.stream$unnamed.total[i+1] / counts.stream$unnamed.total[i]
+}
+
+par(mfrow=c(1,2))
+plot(counts.stream$year, log(counts.stream$crow.lam), type="l", xlab="Year", ylab="log Lamdba (Nt+1/Nt)", col="blue")
+lines(counts.stream$year, log(counts.stream$diam.lam), col="orange")
+lines(counts.stream$year, log(counts.stream$un.lam), col="grey")
+boxplot(mean(log(counts.stream$crow.lam[-c(1:2,33)])), mean(log(counts.stream$diam.lam[-c(1:2,33)])), mean(log(counts.stream$un.lam[-c(1:2,33)])),
+        xlab="Population", ylab="Mean observed stochastic log Lamdba", col=c("blue","orange","grey"), names=c("crow","diamond","unnamed"))
+```
+
+### These functions are needed for the next chunk
+```{r, include=FALSE}
+#install.packages("devtools")
+#library(devtools)
+#install_github("jonesor/Rage")
+
+library(popbio)
+library(popdemo)
+library(Rage)
+
+#Need this function to run collapseMatrix()
+checkValidMat <- function(M,
+                          fail_all_na = TRUE,
+                          fail_any_na = TRUE,
+                          warn_all_zero = TRUE,
+                          warn_surv_issue = FALSE) {
+  
+  mn <- deparse(substitute(M)) # name of object passed to M
+  
+  if (!is.matrix(M) || !is.numeric(M) || (nrow(M) != ncol(M))) {
+    stop("Argument ", mn, " must be a square numeric matrix", call. = FALSE)
+  }
+  if (fail_all_na && all(is.na(M))) {
+    stop("Argument ", mn, " contains only missing values (i.e. all <NA>)",
+         call. = FALSE)
+  }
+  if (fail_any_na && any(is.na(M))) {
+    stop("Argument ", mn, " contains missing values (i.e. <NA>)", call. = FALSE)
+  }
+  if (warn_all_zero && all(M == 0)) {
+    warning("All elements of ", mn, " are zero", call. = FALSE)
+  }
+  if (warn_surv_issue && any(colSums(M) > 1)) {
+    warning("Argument ", mn, " has at least one stage-specific survival",
+                  " probability > 1", call. = FALSE)
+  }
+}
+
+```
+
+
+# Collapsing 4x4 Transition matrices from Floyd into 2x2 transition matrices
+```{r}
+### If we want to model 2-stages (rosettes and flowering), and use Floyd's data, then we need to collapse the stage-based matrices.
+### collapseMatrix does this for us, and it preserves the exact same asymptotic growth rates (eigenvalue) and stable stage distributions (eigenvector)
+### Can these 2-stage transition probabilities be used as priors in your analysis?
+### After collapsing, the transition probabilities are remarkably similar
+
+### I've done this for the mean transition matrices in each stream, but Floyd published transition matrices for each plot as well if helpful
+
+# Mean tansition matrix for Crow Creek 1992-1993, broken into survival (matU) and fecundity (matF) matrices
+mat.crow.92.93 <-      c(0.043, 0.010, 0.000, 7.869,
+                         0.348, 0.260, 0.077, 3.829,
+                         0.565, 0.410, 0.385, 0.168,
+                         0.000, 0.070, 0.253, 0.040)
+
+matU.crow.92.93 <- c(0.043, 0.010, 0.000, 0.000,
+                         0.348, 0.260, 0.077, 0.000,
+                         0.565, 0.410, 0.385, 0.000,
+                         0.000, 0.070, 0.253, 0.040)
+
+matF.crow.92.93 <- c(0.000, 0.000, 0.000, 7.869,
+                         0.000, 0.000, 0.000, 3.829,
+                         0.000, 0.000, 0.000, 0.168,
+                         0.000, 0.000, 0.000, 0.000)
+
+matU <- matrix(matU.crow.92.93, nrow=4, byrow=TRUE)
+matF <- matrix(matF.crow.92.93, nrow=4, byrow=TRUE)
+collapse1 <- list(1:3, 4)
+matA.crow.92.93 <- collapseMatrix(matU, matF, matC=NULL, collapse1)$matA
+matA.crow.92.93
+lifeExpectancy(matU)
+colnames(matA.crow.92.93)<-c("rosette","flowering")
+rownames(matA.crow.92.93)<-c("rosette","flowering")
+
+
+
+mat.crow.93.94 <- c(0.048, 0.015, 0.000, 1.372,
+                    0.455, 0.295, 0.000, 0.823,
+                    0.217, 0.515, 0.312, 0.137,
+                    0.000, 0.045, 0.581, 0.000)
+
+matU.crow.93.94 <- c(0.048, 0.015, 0.000, 0.000,
+                         0.455, 0.295, 0.000, 0.000,
+                         0.217, 0.515, 0.312, 0.000,
+                         0.000, 0.045, 0.581, 0.000)
+
+matF.crow.93.94 <- c(0.000, 0.000, 0.000, 1.372,
+                         0.000, 0.000, 0.000, 0.823,
+                         0.000, 0.000, 0.000, 0.137,
+                         0.000, 0.000, 0.000, 0.000)
+matU <- matrix(matU.crow.93.94, nrow=4, byrow=TRUE)
+matF <- matrix(matF.crow.93.94, nrow=4, byrow=TRUE)
+collapse1 <- list(1:3, 4)
+matA.crow.93.94 <- collapseMatrix(matU, matF, matC=NULL, collapse1)$matA
+matA.crow.93.94
+lambda(matA.crow.93.94)
+
+
+
+mat.unnamed.92.93 <- c(0.000, 0.023, 0.000, 15.033,
+                       0.465, 0.263, 0.039, 6.769,
+                       0.465, 0.320, 0.394, 0.937,
+                       0.000, 0.051, 0.457, 0.000)
+matU.unnamed.92.93 <- c(0.000, 0.023, 0.000, 0.000,
+                       0.465, 0.263, 0.039, 0.000,
+                       0.465, 0.320, 0.394, 0.000,
+                       0.000, 0.051, 0.457, 0.000)
+matF.unnamed.92.93 <- c(0.000, 0.000, 0.000, 15.033,
+                       0.000, 0.000, 0.000, 6.769,
+                       0.000, 0.000, 0.000, 0.937,
+                       0.000, 0.000, 0.000, 0.000)
+A <- matrix(mat.unnamed.92.93, nrow=4, byrow=T)
+lambda(A)
+matU <- matrix(matU.unnamed.92.93, nrow=4, byrow=TRUE)
+matF <- matrix(matF.unnamed.92.93, nrow=4, byrow=TRUE)
+collapse1 <- list(1:3, 4)
+matA.unnamed.92.93 <- collapseMatrix(matU, matF, matC=NULL, collapse1)$matA
+matA.unnamed.92.93
+lambda(matA.unnamed.92.93)
+
+
+mat.unnamed.93.94 <- c(0.092, 0.019, 0.007, 1.916,
+                       0.441, 0.541, 0.116, 0.421,
+                       0.077, 0.344, 0.355, 0.013,
+                       0.000, 0.032, 0.471, 0.000)
+matU.unnamed.93.94 <- c(0.092, 0.019, 0.007, 0.000,
+                       0.441, 0.541, 0.116, 0.000,
+                       0.077, 0.344, 0.355, 0.000,
+                       0.000, 0.032, 0.471, 0.000)
+matF.unnamed.93.94 <- c(0.000, 0.000, 0.000, 1.916,
+                       0.000, 0.000, 0.000, 0.421,
+                       0.000, 0.000, 0.000, 0.013,
+                       0.000, 0.000, 0.000, 0.000)
+A <- matrix(mat.unnamed.93.94, nrow=4, byrow=T)
+lambda(A)
+matU <- matrix(matU.unnamed.93.94, nrow=4, byrow=TRUE)
+matF <- matrix(matF.unnamed.93.94, nrow=4, byrow=TRUE)
+collapse1 <- list(1:3, 4)
+matA.unnamed.93.94 <- collapseMatrix(matU, matF, matC=NULL, collapse1)$matA
+matA.unnamed.93.94
+lambda(matA.unnamed.93.94)
+
+
+mat.diamond.92.93 <- c(0.077, 0.007, 0.000, 10.726,
+                       0.538, 0.319, 0.060, 2.917,
+                       0.308, 0.399, 0.208, 0.713,
+                       0.019, 0.036, 0.403, 0.054)
+matU.diamond.92.93 <- c(0.077, 0.007, 0.000, 0.000,
+                       0.538, 0.319, 0.060, 0.000,
+                       0.308, 0.399, 0.208, 0.000,
+                       0.019, 0.036, 0.403, 0.054)
+matF.diamond.92.93 <- c(0.000, 0.000, 0.000, 10.726,
+                       0.000, 0.000, 0.000, 2.917,
+                       0.000, 0.000, 0.000, 0.713,
+                       0.000, 0.000, 0.000, 0.000)
+A <- matrix(mat.diamond.92.93, nrow=4, byrow=T)
+lambda(A)
+matU <- matrix(matU.diamond.92.93, nrow=4, byrow=TRUE)
+matF <- matrix(matF.diamond.92.93, nrow=4, byrow=TRUE)
+collapse1 <- list(1:3, 4)
+matA.diamond.92.93 <- collapseMatrix(matU, matF, matC=NULL, collapse1)$matA
+matA.diamond.92.93
+lambda(matA.diamond.92.93)
+
+mat.diamond.93.94 <- c(0.078, 0.013, 0.000, 3.782,
+                       0.616, 0.416, 0.160, 0.895,
+                       0.043, 0.456, 0.395, 0.052,
+                       0.016, 0.067, 0.387, 0.000)
+matU.diamond.93.94 <- c(0.078, 0.013, 0.000, 0.000,
+                       0.616, 0.416, 0.160, 0.000,
+                       0.043, 0.456, 0.395, 0.000,
+                       0.016, 0.067, 0.387, 0.000)
+matF.diamond.93.94 <- c(0.000, 0.000, 0.000, 3.782,
+                       0.000, 0.000, 0.000, 0.895,
+                       0.000, 0.000, 0.000, 0.052,
+                       0.000, 0.000, 0.000, 0.000)
+A <- matrix(mat.diamond.93.94, nrow=4, byrow=T)
+lambda(A)
+matU <- matrix(matU.diamond.93.94, nrow=4, byrow=TRUE)
+matF <- matrix(matF.diamond.93.94, nrow=4, byrow=TRUE)
+collapse1 <- list(1:3, 4)
+matA.diamond.93.94 <- collapseMatrix(matU, matF, matC=NULL, collapse1)$matA
+matA.diamond.93.94
+lambda(matA.diamond.93.94)
+
+### List of collapsed matrices, that show remarkable similarity!
+two.stage.mats <- list( matA.crow.92.93,
+                        matA.crow.93.94,
+                        matA.unnamed.92.93,
+                        matA.unnamed.93.94,
+                        matA.diamond.92.93,
+                        matA.diamond.93.94)
+
+
+```
+

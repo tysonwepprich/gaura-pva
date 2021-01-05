@@ -1,0 +1,62 @@
+
+    # Negative binomial initial abundance, Ricker-logistic dynamics + immigration
+    model {
+    ## PRIORS
+    # starting population size
+    alpha ~ dunif(0, 30)
+    for(i in 1:nSites){
+      lambda[i] ~ dunif(10, 5000)
+      P[i] <- alpha/(alpha + lambda[i])
+    }
+    
+    # nu: annual environmental variation on growth rates
+    # shared across populations
+    # sigma.nu ~ dunif(0, 2)
+    # tau.nu <- 1 / (sigma.nu * sigma.nu)
+    # for(t in 2:nYears) {
+    #  nu[t-1] ~ dnorm(0, tau.nu)
+    # }
+    
+    # variation in detection probability (flowering)
+    sigma.p ~ dunif(0, 2)
+    tau.p <- 1 / (sigma.p * sigma.p)
+    mean.p ~ dunif(0.1, 0.5)
+    
+    # r ~ dunif(0, 5)    
+    
+    # each population has different base growth rate
+    # and different density dependence
+    for(i in 1:nSites){
+    # beta1[i] ~ dnorm(b1, tau.b1)
+      beta2[i] ~ dnorm(b2, tau.b2)
+        # for(t in 2:nYears){
+        r[i] ~ dnorm(mean.r, tau.r)
+        # }
+    }
+    mean.r ~ dnorm(0, .0001)
+    sigma.r ~ dunif(0, 5)
+    tau.r <-  1 / (sigma.r * sigma.r)
+    # b1 ~ dnorm(0, .001)
+    # sigma.b1 ~ dunif(0, 5)
+    # tau.b1 <-  1 / (sigma.b1 * sigma.b1)
+    b2 ~ dnorm(0, .001)
+    sigma.b2 ~ dunif(0, 5)
+    tau.b2 <-  1 / (sigma.b2 * sigma.b2)
+    
+    for(i in 1:nSites) {
+    N[i,1] ~ dnegbin(P[i], alpha)
+    
+      for(t in 2:nYears) {
+        muN[i,t-1] <- N[i, t-1] * exp(r[i] + beta2[i] * (t - 1)) # beta1[i] * log(N[i, t-1]) + 
+        N[i,t] ~ dpois(muN[i, t-1])
+        }
+    
+    for(t in 1:nYears) {
+    y[i,t] ~ dbin(p[i,t], N[i,t])
+    logit(p[i,t]) <-  -lp[i,t] 
+    lp[i,t] ~ dnorm(mean.p, tau.p)
+    }
+    } # nSites
+    
+    }
+    

@@ -1,0 +1,65 @@
+Compiling model graph
+   Resolving undeclared variables
+   Allocating nodes
+Deleting model
+
+Compiling model graph
+   Resolving undeclared variables
+   Allocating nodes
+Graph information:
+   Observed stochastic nodes: 42
+   Unobserved stochastic nodes: 73
+   Total graph size: 239
+
+Initializing model
+Deleting model
+
+Compiling model graph
+   Resolving undeclared variables
+   Allocating nodes
+Graph information:
+   Observed stochastic nodes: 42
+   Unobserved stochastic nodes: 73
+   Total graph size: 237
+
+Initializing model
+Deleting model
+
+ [1]  172   40  110   36    1  163   20 2508 1894 1790  644   23  405 3769
+ [1]  172   40  110   36    1  163   20 2508 1894 1790  644   23  405 3769
+ [1]  172   40  110   36    1  163   20 2508 1894 1790  644   23  405 3769
+      first.count second.count flower.count
+ [1,]         127          150          156
+ [2,]          29           21           36
+ [3,]          91          100          100
+ [4,]          33           22           33
+ [5,]           1            1            1
+ [6,]         137          140          148
+ [7,]          16           18           17
+ [8,]        2034         2280         2268
+ [9,]        1722         1540         1497
+[10,]        1615         1612         1627
+[11,]         561          520          585
+[12,]          21           17           21
+[13,]         368          362          275
+[14,]        3426         3379         3388
+ [1]  172   40  110   36    1  163   20 2508 1894 1790  644   23  405 3769
+      first.count second.count flower.count
+ [1,]         127          150          156
+ [2,]          29           21           36
+ [3,]          91          100          100
+ [4,]          33           22           33
+ [5,]           1            1            1
+ [6,]         137          140          148
+ [7,]          16           18           17
+ [8,]        2034         2280         2268
+ [9,]        1722         1540         1497
+[10,]        1615         1612         1627
+[11,]         561          520          585
+[12,]          21           17           21
+[13,]         368          362          275
+[14,]        3426         3379         3388
+ int [1:14, 1:3] 127 29 91 33 1 137 16 2034 1722 1615 ...
+ - attr(*, "dimnames")=List of 2
+  ..$ : NULL
+  ..$ : chr [1:3] "first.count" "second.count" "flower.count"

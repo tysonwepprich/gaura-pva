@@ -1,0 +1,24 @@
+
+    # Negative binomial initial abundance
+    model {
+    ## PRIORS
+    
+    # sigma.p ~ dunif(0, 2)
+    # tau.p <- 1 / (sigma.p * sigma.p)
+    # beta.p ~ dnorm(0, .01)
+    mean.p ~ dunif(0, 1)
+    
+    ## MODEL
+    for(i in 1:nSites) {
+    # N[i] ~ dnegbin(P[i], alpha)
+    N[i] ~ dpois(starty[i])    
+    
+    for(t in 1:nRep) {
+    y[i,t] ~ dbin(mean.p, N[i])
+    # logit(p[i,t]) <-  -lp[i,t]
+    # lp[i,t] <- mean.p + beta.p * N[i]
+    }
+    } # nSites
+    
+    }
+    

@@ -1,0 +1,119 @@
+---
+title: "COBP Parameters"
+author: "Tyson Wepprich"
+date: "March 1, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(reshape)
+library(dplyr)
+library(ggplot2)
+library(popbio)
+library(tidyr)
+library(stringr)
+'%!in%' <- function(x,y)!('%in%'(x,y))
+theme_set(theme_bw(base_size = 10))
+
+```
+
+## Intro
+
+As a first step, I'm bringing together demographic data from different studies.
+
+
+```{r flower counts}
+census <- read.csv("cobp.count.csv", header = TRUE)
+
+ggplot(census, aes(x = year, y = flower.count, group = segment)) +
+  geom_point() +
+    geom_line() +
+    facet_wrap(~segment, scales = "free")
+
+```
+
+Floyd and Ranker demography
+
+```{r floyd demography}
+data <- read.csv("oldR/matrix.data", header = TRUE)
+
+
+expanded<-reshape::untable(data[, c(2:5)], data[,1])
+expanded$stage <- factor(expanded$stage, levels = c("seed", "small", "medium", "large1", "large2", "flower", "dead"), ordered = TRUE)
+expanded$fate <- factor(expanded$fate, levels = c("seed", "small", "medium", "large1", "large2", "flower", "dead"), ordered = TRUE)
+
+stages <- c("seed", "small", "medium", "large1", "large2", "flower")
+fates <- c("dead", "small", "medium", "large1", "large2", "flower")
+
+tf <- table(expanded[, "fate"], expanded[, "stage"])
+T.mat <- prop.table(tf, 2)
+
+
+all.mats <- array(data = NA, dim = c(9, 2, 7, 7))
+for (plot in 1:9){
+  for (year in 1992:1993){
+    temp <- expanded[expanded$plot == plot & expanded$year.start == year, ]
+    tftmp <- table(temp[, "fate"], temp[, "stage"])
+    year.index <- year - 1991
+    all.mats[plot, year.index, ,] <- prop.table(tftmp, 2)
+  }
+}
+
+ temp <- expanded[expanded$plot %in% c(1:3) & expanded$year.start == 1992, ]
+    tftmp <- table(temp[, "fate"], temp[, "stage"])
+    year.index <- year - 1991
+    all.mats[plot, year.index, ,] <- prop.table(tftmp, 2)
+
+```
+
+From Floyd data, the number of flowers in the previous year (n = 18) or 2-years prior (n = 9)
+has very little correlation with the number of new seedlings. Seed bank overwhelming
+new inputs from flowers.
+
+```{r seedlings from flowers}
+
+oneyr <- data %>% 
+  group_by(plot, year.start) %>% 
+  summarise(seedlings = sum(num.plants[stage == "seed"]),
+                   flowers = sum(num.plants[stage == "flower"]),
+                   total.plants = sum(num.plants))
+
+pairs(oneyr[, 3:5])
+
+twoyr <- oneyr %>% 
+  group_by(plot) %>% 
+  summarise(seedlings = seedlings[2],
+            flowers = flowers[1],
+            total1 = total.plants[1],
+            total2 = total.plants[2])
+pairs(twoyr[, 2:5])
+
+# rosette ratio
+r2f <- data %>%
+  group_by(plot, year.start) %>% 
+  summarise(f1 = sum(num.plants[stage == "flower"]),
+            f2 = sum(num.plants[fate == "flower"]),
+            r1 = sum(num.plants[stage %in% c("small", "medium", "large1", "large2")]),
+            r2 = sum(num.plants[fate %in% c("small", "medium", "large1", "large2")])) %>% 
+  group_by(plot) %>% 
+  summarise(r2f_1992 = r1[1] / f1[1],
+            r2f_1993 = r2[1] / f2[1],
+            r2f_1994 = r2[2] / f2[2])
+
+```
+
+Other studies with flower capsule to seed data.
+Burgess (2005) germination study estimates 1.0, 1.4, and 1.9 viable seeds per capsule (at 4, 16, and 51 months storage).
+Munk (2002) estimates number of capsules per flower.
+No difference between creeks or treatment on capsules. Clearing plants increases rosettes. Number of capsules not correlated with number of rosettes (similar to F & R).
+
+Roughly 36 viable seeds per flower (1.4 * 26)
+  
+```{r }
+
+capsules <- c(16.0, 33.7, 28.2, 34.8, 50.8, 22.9, 48.9, 16.1, 33.5, 6.0, 22.4, 0)
+
+```
+
+

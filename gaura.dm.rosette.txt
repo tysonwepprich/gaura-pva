@@ -1,0 +1,92 @@
+
+    # Regional stochasticity
+    # Negative binomial initial abundance, Ricker-logistic dynamics + immigration
+    model {
+    lambda ~ dunif(0, 5000)
+    alpha ~ dunif(0, 20)
+    P <- alpha/(alpha + lambda)
+    iota ~ dunif(0, 10)
+
+    # growth rate 
+    mean.r ~ dnorm(0, 0.001)
+    sigma.r ~ dunif(0, 5)
+    tau.r <- 1 / (sigma.r * sigma.r)
+    for(i in 1:nSites){
+      site.r[i] ~ dnorm(mean.r, tau.r)
+    }
+    
+    sigma.nu ~ dunif(0, 5)
+    tau.nu <- 1 / (sigma.nu * sigma.nu)
+    
+    
+    mean.flower ~ dnorm(-2, .5)T(-5,-1)
+    sigma.flower ~ dunif(0, .5)
+    tau.flower <- 1 / (sigma.flower * sigma.flower)    
+
+
+    # varying slopes by site
+    for (v in 1:12){
+      beta.mean[v] ~ dunif(-5, 5)
+      sigma.beta[v] ~ dunif(0, 5)
+      tau.beta[v] <- 1 / (sigma.beta[v] * sigma.beta[v])
+      for (i in 1:nSites){
+        site.beta[i, v] ~ dnorm(beta.mean[v], tau.beta[v])
+        }
+      }
+    
+
+    
+    # vital rates
+    for (i in 1:nSites){
+      logit(flower[i,1]) <- norm.flower[i,1]
+       norm.flower[i,1] ~ dnorm(mean.flower, tau.flower)T(-5,-1)
+      
+      for(t in 2:nYears) {
+       
+        log(lam[i,t-1]) <- norm.r[i,t-1]
+        norm.r[i,t-1] ~ dnorm(r[i,t-1], tau.nu)T(-3,3)
+        r[i,t-1] <-        site.r[i] +      site.beta[i,1] * zyear[t-1]  +        
+                                            site.beta[i,2] * zprec[t-1] + 
+                                            site.beta[i,3] * zprec[t] + 
+                                            site.beta[i,4] * ztemp[t-1] + 
+                                            site.beta[i,5] * ztemp[t] +
+                                            site.beta[i,6] * N[i,t-1]
+
+        logit(flower[i,t]) <- norm.flower[i,t] 
+        norm.flower[i,t] ~ dnorm(link.flower[i,t], tau.flower)T(-5,-1)
+        link.flower[i,t] <- mean.flower  +  site.beta[i,7] * zyear[t-1]  +
+                                            site.beta[i,8] * zprec[t-1] + 
+                                            site.beta[i,9] * zprec[t] + 
+                                            site.beta[i,10] * ztemp[t-1] + 
+                                            site.beta[i,11] * ztemp[t] +
+                                            site.beta[i,12] * N[i,t-1]
+
+      }
+    } 
+
+
+    # Process model
+
+    for(i in 1:nSites) {
+      N[i,1] ~ dnegbin(P, alpha)
+      for(t in 2:nYears){
+        N[i,t] ~ dpois(muN[i, t-1])
+        muN[i,t-1] <- N[i, t-1] * lam[i,t-1] + iota
+        }
+
+      for(t in 1:nYears) {
+        # y[i,t] ~ dbin(0.87, N.fl[i,t])
+        y[i,t] ~ dpois(N.fl[i,t])
+        N.fl[i,t] ~ dbin(flower[i,t], N[i,t])
+        }
+      }
+    
+    # derived predictions summed across creeks
+    for (t in 1:nYears){
+    creek[,t] <- c(sum(N[c(1:7), t]), sum(N[c(8:12), t]), sum(N[c(13:14), t]))
+    total[t] <- sum(creek[,t])
+    }
+    
+    
+    }
+    

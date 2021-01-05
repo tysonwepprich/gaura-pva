@@ -1,0 +1,44 @@
+
+var Ndecade[nSites,5]
+model {
+lambda ~ dunif(0, 200)
+alpha ~ dunif(0, 200)
+p.nb <- alpha/(alpha + lambda)
+r ~ dunif(0, 5)
+K ~ dunif(0, 200)
+p0 ~ dnorm(0, 0.01)
+p1 ~ dnorm(0, 0.01)
+p2 ~ dnorm(0, 0.01)
+p3 ~ dnorm(0, 0.01)
+p1st ~ dnorm(0, 0.01)
+iota ~ dunif(0, 15)
+sigma.p ~ dunif(0,15)
+tau.p <- 1 / (sigma.p * sigma.p)
+
+for (o in 1:nObs) {
+  eta[o] ~ dnorm(0,tau.p)
+}
+
+for(i in 1:nSites) {
+  N[i,1] ~ dnegbin(p.nb, alpha)
+  for(t in 2:nYears) {
+      muN[i,t-1] <- N[i,t-1]*exp(r*(1-N[i,t-1]/K))+iota
+      N[i,t] ~ dpois(muN[i,t-1])
+    }
+  for(t in 1:nYears) {
+    logit(p[i,t]) <- p0 + p1*wind1[i,t] + p2*wind2[i,t] + p3*wind3[i,t] + p1st*first[i,t] + eta[obsID[i,t]]
+    y[i,t] ~ dbin(p[i,t], N[i,t])
+    }
+  }
+
+for(t in 1:nYears) {
+  Nmean[t] <- mean(N[,t])
+}
+
+for (t2 in 1:length(decades)) {
+  for(i in 1:nSites) {
+    Ndecade[i,t2] <- N[i,decades[t2]]
+  }
+}
+}
+

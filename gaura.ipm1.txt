@@ -1,0 +1,125 @@
+
+    model {
+    # Negative binomial initial abundance
+    lambda ~ dunif(0, 5000)
+    alpha ~ dunif(0, 20)
+    P <- alpha/(alpha + lambda)
+    
+    # Vital rates (annual variation)
+    # mean and standard deviations
+    # on link scales (log and logit)
+    mean.survR ~ dnorm(1.5, .25)  # F & R rosette survival is 80 - 87% (including ones that then flower)
+    mean.flower ~ dnorm(-2, .5) # based on rosette:flower ratios and flowering rates from F&R, 
+    # survF[i] ~ dunif(0, 0.05)
+    mean.germ ~ dunif(-3, 3.5) # combination of recruitment and survival from F&R (0 to 20 per flower)
+    mean.iota ~ dpois(1) # immigration
+
+    
+    # sigma.site.survR ~ dunif(0, 5)
+    # tau.site.survR <- 1 / (sigma.site.survR * sigma.site.survR)
+    # sigma.site.flower ~ dunif(0, 5)
+    # tau.site.flower <- 1 / (sigma.site.flower * sigma.site.flower)
+    # sigma.site.germ ~ dunif(0, 5)
+    # tau.site.germ <- 1 / (sigma.site.germ * sigma.site.germ)
+
+    sigma.year.survR ~ dunif(0, 5)
+    tau.year.survR <- 1 / (sigma.year.survR * sigma.year.survR)
+    sigma.year.flower ~ dunif(0, 5)
+    tau.year.flower <- 1 / (sigma.year.flower * sigma.year.flower)
+    sigma.year.germ ~ dunif(0, 5)
+    tau.year.germ <- 1 / (sigma.year.germ * sigma.year.germ)
+
+    # density dependenct vital rates with temp/precip effects of year t and t-1 
+    # varying slopes by site
+    for (v in 1:15){
+      beta.mean[v] ~ dunif(-5, 5)
+      sigma.beta[v] ~ dunif(0, 5)
+      tau.beta[v] <- 1 / (sigma.beta[v] * sigma.beta[v])
+      for (i in 1:nSites){
+       site.beta[i, v] ~ dnorm(beta.mean[v], tau.beta[v])
+      }
+    }
+
+    # Vital rates (annual and site variation, no density dependence)
+    for (i in 1:nSites){
+       # site.survR[i] ~ dnorm(mean.survR, tau.site.survR)
+       # site.flower[i] ~ dnorm(mean.flower, tau.site.flower)
+       # site.germ[i] ~ dnorm(mean.germ, tau.site.germ)
+        
+      # flowering every year, other vital rates nYears-1
+      logit(flower[i,1]) <- norm.flower[i,1]
+       norm.flower[i,1] ~ dnorm(mean.flower, tau.year.flower)
+
+      # meanrosette[i] <- sum(R[i,]) / nYears
+
+      for (t in 2:nYears){  
+          # ddrosette[i, t-1] <- R[i,t-1] - meanrosette[i]
+         # ddsurvR[i,t-1] <- survR[i,t-1] / (1 + site.beta[i,16] * R[i,t-1])
+         logit(survR[i,t-1]) <- norm.survR[i,t-1]
+         norm.survR[i,t-1] ~ dnorm(link.survR[i,t-1], tau.year.survR)T(0.85,2.2) # truncated to keep to realistic values
+         link.survR[i,t-1] <- mean.survR +        
+                                            site.beta[i,1] * zprec[t-1] + 
+                                            site.beta[i,2] * zprec[t] + 
+                                            site.beta[i,3] * ztemp[t-1] + 
+                                            site.beta[i,4] * ztemp[t] +
+                                            site.beta[i,5] * R[i,t-1]
+        
+        # ddflower[i,t] <- flower[i,t] / (1 + site.beta[i,17] * R[i,t-1])
+        logit(flower[i,t]) <- norm.flower[i,t] 
+        norm.flower[i,t] ~ dnorm(link.flower[i,t], tau.year.flower)T(-5,-1)
+        link.flower[i,t]  <- mean.flower +        
+                                            site.beta[i,6] * zprec[t-1] + 
+                                            site.beta[i,7] * zprec[t] + 
+                                            site.beta[i,8] * ztemp[t-1] + 
+                                            site.beta[i,9] * ztemp[t] +
+                                            site.beta[i,10] * R[i,t-1]
+
+
+    
+        # ddgerm[i,t-1] <- germ[i,t-1] / (1 + site.beta[i,18] * R[i,t-1])
+        log(germ[i,t-1]) <- norm.germ[i,t-1]
+        norm.germ[i,t-1] ~ dnorm(link.germ[i,t-1], tau.year.germ)T(-3,3.5)
+        link.germ[i,t-1] <- mean.germ +           
+                                            site.beta[i,11] * zprec[t-1] + 
+                                            site.beta[i,12] * zprec[t] + 
+                                            site.beta[i,13] * ztemp[t-1] + 
+                                            site.beta[i,14] * ztemp[t] +
+                                            site.beta[i,15] * R[i,t-1]
+
+
+        }
+      }
+
+    for(i in 1:nSites) {
+      # starting population size
+      startN[i] ~ dnegbin(P, alpha)
+      R[i,1] <- startN[i] - Fl[i,1]
+      Fl[i,1] ~ dbin(flower[i,1], startN[i])
+
+      # process model of demographic transitions
+      for(t in 2:nYears) {
+        Rsurv[i,t-1] ~ dbin(survR[i,t-1], R[i,t-1])
+        # Fsurv[i,t-1] ~ dbin(survF[i,t-1], Fl[i,t-1]) # very small
+        Fl[i,t] ~ dbin(flower[i,t], Rsurv[i,t-1])
+        FtoR[i,t-1] ~ dpois(Fl[i,t-1]*germ[i,t-1] + mean.iota)
+  
+        R[i, t] <- FtoR[i,t-1] + Rsurv[i,t-1] - Fl[i,t]
+
+      }
+      # flowering ratio and observation of flowers
+      for(t in 1:nYears) {
+        # y[i,t] ~ dbin(0.89, Fl[i,t])
+        y[i,t] ~ dpois(Fl[i,t])
+        }
+    }
+    
+    # derived predictions summed across creeks
+    for (t in 1:nYears){
+      creek[,t] <- c(sum(N[c(1:7), t]), sum(N[c(8:12), t]), sum(N[c(13:14), t]))
+      total[t] <- sum(creek[,t])
+      for (i in 1:nSites){
+        N[i, t] <- R[i, t] + Fl[i, t]
+        }
+      }
+    }
+    
